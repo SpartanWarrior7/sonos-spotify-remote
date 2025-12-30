@@ -1,7 +1,9 @@
 import soco
 
+
 TARGET_NAME = "Luke’s Room"
 
+# 1) Find the speaker
 speakers = soco.discover()
 speaker = None
 for s in speakers:
@@ -13,34 +15,39 @@ if speaker is None:
     print("Could not find speaker:", TARGET_NAME)
     raise SystemExit
 
-"""
-# this plays/pauses music
- state = speaker.get_current_transport_info()["current_transport_state"]
+print("Connected to:", speaker.player_name)
 
-print("Current state:", state)
+# 2) Ask what action you want
+print("")
+print("Choose an action:")
+print("1 = Play/Pause")
+print("2 = Next track")
+print("3 = Volume up")
+print("4 = Volume down")
 
-if state == "PLAYING":
-    print("Pausing music...")
-    speaker.pause()
+choice = input("Type 1, 2, 3, or 4 and press Enter: ").strip()
+
+# 3) Do the action
+if choice == "1":
+    state = speaker.get_current_transport_info()["current_transport_state"]
+    if state == "PLAYING":
+        speaker.pause()
+        print("Paused.")
+    else:
+        speaker.play()
+        print("Playing.")
+
+elif choice == "2":
+    speaker.next()
+    print("Skipped to next track.")
+
+elif choice == "3":
+    speaker.volume = min(speaker.volume + 5, 100)
+    print("Volume is now:", speaker.volume)
+
+elif choice == "4":
+    speaker.volume = max(speaker.volume - 5, 0)
+    print("Volume is now:", speaker.volume)
+
 else:
-    print("Playing music...")
-    speaker.play()
-
-print("Done.") """
-
-# this next part skips current track
-""" print("Skipping to next track...")
-speaker.next()
-print("Done.") """
-
-#the next part increases volume by 5
-current_volume = speaker.volume
-print("Current volume:", current_volume)
-
-new_volume = min(current_volume + 5, 100)
-speaker.volume = new_volume
-
-print("Volume increased to:", new_volume)
-
-
-
+    print("Invalid choice.")
