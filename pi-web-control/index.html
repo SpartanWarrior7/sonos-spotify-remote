@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Pi Control</title>
+</head>
+<body>
+  <h1>Raspberry Pi Control Panel</h1>
+
+  <button onclick="runProgram()">Run Hello Program</button>
+  <button onclick="runSonosPlayPauseLuke()">Sonos: Play/Pause (Luke's Room)</button>
+  <pre id="output"></pre>
+
+  <script>
+    function runProgram() {
+      fetch('/run/hello')
+        .then(response => response.json())
+        .then(data => {
+          document.getElementById('output').textContent =
+            "Exit code: " + data.exit_code + "\n\n" +
+            data.output + data.error;
+        });
+ function runSonosPlayPauseLuke() {
+    fetch('/run/sonos_playpause_luke')
+      .then(response => response.json())
+      .then(data => {
+        document.getElementById('output').textContent =
+          "Exit code: " + data.exit_code + "\n\n" +
+          data.output + data.error;
+      });	
+    }
+  </script>
+</body>
+</html>
