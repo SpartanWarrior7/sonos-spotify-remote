@@ -1,8 +1,10 @@
 import sys
+import json
 import soco
+from pathlib import Path
 from soco.plugins.sharelink import ShareLinkPlugin
 
-LUKE_NAME = "Luke’s Room"
+LUKE_NAME = "Luke\u2019s Room"
 DLK_NAME = "Dining/Living/Kitchen"
 FAMILY_NAME = "Family Room"
 
@@ -11,19 +13,79 @@ PLAYLISTS = {
     "Liked": "7xuYLV75BZdO351Eh37pyE",      # your playlist
 }
 
+# Cache file for speaker IPs
+CACHE_FILE = Path(__file__).parent / "speaker_cache.json"
 
-def find_zone(name: str, zones):
+
+def load_speaker_cache():
+    """Load cached speaker IPs from file."""
+    if CACHE_FILE.exists():
+        try:
+            return json.loads(CACHE_FILE.read_text())
+        except Exception:
+            pass
+    return {}
+
+
+def save_speaker_cache(cache):
+    """Save speaker IPs to cache file."""
+    CACHE_FILE.write_text(json.dumps(cache, indent=2))
+
+
+def get_zone_by_ip(ip: str):
+    """Connect directly to a speaker by IP."""
+    return soco.SoCo(ip)
+
+
+def discover_and_cache():
+    """Discover speakers and cache their IPs."""
+    zones = soco.discover(timeout=5)
+    if not zones:
+        return {}
+    cache = {}
     for z in zones:
-        if z.player_name == name:
-            return z
-    raise SystemExit(f"Could not find speaker: {name}")
+        cache[z.player_name] = z.ip_address
+    save_speaker_cache(cache)
+    return cache
+
+
+def get_zones():
+    """Get zones using cached IPs, falling back to discovery if needed."""
+    cache = load_speaker_cache()
+
+    # Check if we have all required speakers cached
+    required = [LUKE_NAME, DLK_NAME, FAMILY_NAME]
+    if all(name in cache for name in required):
+        # Connect directly using cached IPs (fast)
+        return {name: get_zone_by_ip(cache[name]) for name in required}
+
+    # Discovery needed (slow, only happens once)
+    print("Discovering speakers...")
+    cache = discover_and_cache()
+    if not cache:
+        raise SystemExit("No Sonos speakers found")
+
+    for name in required:
+        if name not in cache:
+            raise SystemExit(f"Could not find speaker: {name}")
+
+    return {name: get_zone_by_ip(cache[name]) for name in required}
 
 
 def ensure_solo(zone):
-    """Make sure this zone is not joined to another group."""
+    """Make sure this zone is not joined to another group and has no members."""
     try:
+        # If this zone is not the coordinator, unjoin from current group
         if zone.group.coordinator.uid != zone.uid:
             zone.unjoin()
+        else:
+            # This zone is the coordinator - unjoin all other members
+            for member in list(zone.group.members):
+                if member.uid != zone.uid:
+                    try:
+                        member.unjoin()
+                    except Exception:
+                        pass
     except Exception:
         try:
             zone.unjoin()
@@ -62,19 +124,44 @@ def play_spotify_playlist_id(zone, playlist_id: str, shuffle: bool = True):
 
 def get_active_zone(target: str, luke, dlk, family):
     """
-    Returns the coordinator zone to target based on a string:
+    Returns the coordinator zone to target based on a comma-separated string:
       - "luke"
-      - "dlk_family"
+      - "dlk"
+      - "family"
+      - "luke,dlk,family" (any combination)
     """
-    if target == "luke":
-        ensure_solo(luke)
-        return luke.group.coordinator
+    zone_map = {
+        "luke": luke,
+        "dlk": dlk,
+        "family": family,
+    }
 
-    if target == "dlk_family":
-        group_zones(dlk, [family])
-        return dlk.group.coordinator
+    # Parse comma-separated zones
+    selected = [z.strip() for z in target.split(",") if z.strip() in zone_map]
 
-    raise SystemExit(f"Unknown target: {target}")
+    if not selected:
+        raise SystemExit(f"Unknown target: {target}")
+
+    # Get the zone objects
+    zones_to_group = [zone_map[name] for name in selected]
+
+    # First, unjoin all selected zones from their current groups
+    for zone in zones_to_group:
+        ensure_solo(zone)
+
+    if len(zones_to_group) == 1:
+        # Single zone - just return it
+        return zones_to_group[0]
+
+    # Multiple zones - group them together
+    coordinator = zones_to_group[0]
+    members = zones_to_group[1:]
+    for m in members:
+        try:
+            m.join(coordinator)
+        except Exception:
+            pass
+    return coordinator
 
 
 def toggle_play_pause(active_zone):
@@ -111,13 +198,10 @@ def main():
             sys.exit(1)
         target = sys.argv[i + 1]
 
-    zones = soco.discover()
-    if not zones:
-        raise SystemExit("No Sonos speakers found")
-
-    luke = find_zone(LUKE_NAME, zones)
-    dlk = find_zone(DLK_NAME, zones)
-    family = find_zone(FAMILY_NAME, zones)
+    zones = get_zones()
+    luke = zones[LUKE_NAME]
+    dlk = zones[DLK_NAME]
+    family = zones[FAMILY_NAME]
 
     active_zone = get_active_zone(target, luke, dlk, family)
 
